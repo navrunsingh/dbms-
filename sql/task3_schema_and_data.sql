@@ -161,13 +161,52 @@ INSERT INTO Recipient (R_ID, Name, Age, Blood_Group, Medical_Urgency_Score, Regi
 (408, 'Wei Zhang',      47, 'B+',  72, '2026-03-10');
 
 -- ---- Match Records ----
+-- M701: Kidney to Jane Smith at Central Health (already existed)
+-- M702: Liver to David Lee at Apollo Health Center
+-- M703: Heart to Maria Garcia at City General Hospital
 INSERT INTO Match_Record (M_ID, Match_Date, Compatibility_Score, Organ_ID, Recipient_ID, Hospital_ID) VALUES
-(701, '2026-02-12', 92, 201, 401, 301);
+(701, '2026-02-12', 92, 201, 401, 301),
+(702, '2026-03-15', 90, 207, 402, 302),
+(703, '2026-03-20', 88, 208, 408, 303);
 
 -- ---- Surgery Records ----
+-- 2 Successful surgeries (needed for Q6: hospitals ranked by successful surgeries)
+-- 1 Scheduled surgery (needed for variety)
 INSERT INTO Surgery_Record (S_ID, Surgery_Date, Outcome, Match_ID) VALUES
-(801, '2026-02-13', 'Successful', 701);
+(801, '2026-02-13', 'Successful', 701),
+(802, '2026-03-16', 'Successful', 702),
+(803, '2026-03-21', 'Scheduled',  703);
 
 -- ---- Provides_For (Donor-to-Match link) ----
 INSERT INTO Provides_For (Donor_ID, Match_ID) VALUES
-(101, 701);
+(101, 701),
+(106, 702),
+(107, 703);
+
+-- ---- Extra organ for Q4 (multi-organ donors need >=2 donors with >=2 organs each) ----
+-- Organ 209: 2nd organ from Donor 101 (John Doe already has organ 201 + 206)
+-- Organ 210: 2nd organ from Donor 107 (Carlos Martinez already has organ 208 + 210)
+INSERT INTO Organ (O_ID, Type, Blood_Group, Harvest_Time, Expiry_Time, Status, Donor_ID) VALUES
+(209, 'Pancreas', 'O+', '2026-03-01 08:00:00', '2026-06-01 08:00:00', 'Available', 101),
+(210, 'Kidney',   'B+', '2026-03-05 09:00:00', '2026-06-05 09:00:00', 'Available', 107);
+
+-- ---- Extra O+ donor for Q1 (needs >=2 O+ donors) ----
+INSERT INTO Donor (D_ID, Name, Age, Blood_group, Contact_no, City, Is_Alive) VALUES
+(108, 'Linda Park', 39, 'O+', '555-0891', 'Seattle', TRUE);
+
+INSERT INTO Consent_Document (C_ID, Document_Type, Approval_Status, Upload_Date, Donor_ID) VALUES
+(512, 'Kidney Donation', 'Approved', '2026-03-20', 108);
+
+INSERT INTO Organ (O_ID, Type, Blood_Group, Harvest_Time, Expiry_Time, Status, Donor_ID) VALUES
+(211, 'Kidney', 'O+', '2026-04-10 07:00:00', '2026-07-01 07:00:00', 'Available', 108);
+
+-- ---- Old Rejected Consent Documents for Q15 (older than 1 year) ----
+INSERT INTO Consent_Document (C_ID, Document_Type, Approval_Status, Upload_Date, Donor_ID) VALUES
+(510, 'Kidney Donation', 'Rejected', '2024-12-01', 107),
+(511, 'Liver Donation',  'Rejected', '2024-10-15', 104);
+
+-- NOTE: Organs 201 & 207 are Allocated (matched). Q14 marks them Used after Successful surgery.
+-- The UPDATE in Q14 runs live in the UI, so we leave them as 'Allocated' here.
+-- (If already Used from a previous run, Q14 will show 0 affected — that's also correct.)
+
+

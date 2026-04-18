@@ -73,7 +73,7 @@ const QUERIES = [
     title: 'Ready-to-Allocate Organs (Living Donor + Approved Consent)',
     category: 'JOIN (3-table) + Filter',
     description: 'Organs that are available, from living donors, with fully approved consent — the "ready-to-go" list.',
-    sql: `SELECT o.O_ID, o.Type, o.Blood_Group, d.Name AS Donor_Name, cd.Approval_Status FROM Organ o JOIN Donor d ON o.Donor_ID = d.D_ID JOIN Consent_Document cd ON d.D_ID = cd.Donor_ID WHERE o.Status = 'Available' AND d.Is_Alive = TRUE AND cd.Approval_Status = 'Approved'`
+    sql: `SELECT o.O_ID, o.Type, o.Blood_Group, d.Name AS Donor_Name, 'Approved' AS Approval_Status FROM Organ o JOIN Donor d ON o.Donor_ID = d.D_ID WHERE o.Status = 'Available' AND d.Is_Alive = TRUE AND EXISTS (SELECT 1 FROM Consent_Document cd WHERE cd.Donor_ID = d.D_ID AND cd.Approval_Status = 'Approved')`
   },
   {
     id: 11,
@@ -98,17 +98,17 @@ const QUERIES = [
   },
   {
     id: 14,
-    title: 'Mark Organs as Used After Successful Surgery',
-    category: 'DML — UPDATE',
-    description: 'After a successful transplant, the organ is marked "Used" to remove it from active inventory.',
-    sql: `UPDATE Organ o JOIN Match_Record mr ON o.O_ID = mr.Organ_ID JOIN Surgery_Record s ON mr.M_ID = s.Match_ID SET o.Status = 'Used' WHERE s.Outcome = 'Successful' AND o.Status = 'Allocated'`
-  },
-  {
-    id: 15,
     title: 'Purge Old Rejected Consent Documents',
     category: 'DML — DELETE',
     description: 'Data hygiene: remove consent documents rejected more than 1 year ago for compliance.',
     sql: `DELETE FROM Consent_Document WHERE Approval_Status = 'Rejected' AND Upload_Date < DATE_SUB(CURRENT_DATE, INTERVAL 1 YEAR)`
+  },
+  {
+    id: 15,
+    title: 'Expired Organs Report',
+    category: 'Basic Retrieval + Filter',
+    description: 'Lists all organs whose Expiry_Time has already passed, along with the donor name, current status, and how many hours ago they expired. Critical for data hygiene and audit purposes.',
+    sql: `SELECT o.O_ID, o.Type, o.Blood_Group, o.Status, d.Name AS Donor_Name, o.Expiry_Time, ROUND(TIMESTAMPDIFF(MINUTE, o.Expiry_Time, NOW()) / 60, 1) AS Hours_Expired FROM Organ o JOIN Donor d ON o.Donor_ID = d.D_ID WHERE o.Expiry_Time < NOW() ORDER BY o.Expiry_Time ASC`
   }
 ];
 
@@ -125,6 +125,7 @@ router.get('/run/:id', async (req, res) => {
     if (!query) return res.status(404).json({ error: 'Query not found' });
 
     const [rows] = await pool.query(query.sql);
+    const isModification = !query.sql.trim().toUpperCase().startsWith('SELECT');
     res.json({
       query: {
         id: query.id,
@@ -135,7 +136,7 @@ router.get('/run/:id', async (req, res) => {
       },
       results: rows,
       rowCount: Array.isArray(rows) ? rows.length : (rows.affectedRows ?? 0),
-      isModification: queryId >= 14
+      isModification
     });
   } catch (err) {
     res.status(500).json({ error: err.message });

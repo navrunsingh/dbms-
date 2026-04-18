@@ -107,4 +107,45 @@ router.post('/', async (req, res) => {
   }
 });
 
+// DELETE a match record
+router.delete('/:id', async (req, res) => {
+  const matchId = req.params.id;
+  const conn = await pool.getConnection();
+  try {
+    await conn.beginTransaction();
+
+    // Check if match exists and get the associated Organ_ID
+    const [matches] = await conn.query('SELECT Organ_ID FROM Match_Record WHERE M_ID = ?', [matchId]);
+    if (matches.length === 0) {
+      await conn.rollback();
+      return res.status(404).json({ error: 'Match not found' });
+    }
+    const organId = matches[0].Organ_ID;
+
+    // Check if there are any surgery records attached to this match
+    const [surgeries] = await conn.query('SELECT S_ID FROM Surgery_Record WHERE Match_ID = ?', [matchId]);
+    if (surgeries.length > 0) {
+      await conn.rollback();
+      return res.status(400).json({ error: 'Cannot delete match: an associated surgery record exists. Delete the surgery first.' });
+    }
+
+    // Delete linking records (Many-to-Many resolution table)
+    await conn.query('DELETE FROM Provides_For WHERE Match_ID = ?', [matchId]);
+
+    // Delete the Match_Record
+    await conn.query('DELETE FROM Match_Record WHERE M_ID = ?', [matchId]);
+
+    // Reset the Organ status back to 'Available'
+    await conn.query('UPDATE Organ SET Status = "Available" WHERE O_ID = ? AND Status = "Allocated"', [organId]);
+
+    await conn.commit();
+    res.json({ message: 'Match deleted successfully & Organ status restored to Available' });
+  } catch (err) {
+    await conn.rollback();
+    res.status(500).json({ error: err.message });
+  } finally {
+    conn.release();
+  }
+});
+
 module.exports = router;

@@ -50,4 +50,15 @@ router.put('/:id', async (req, res) => {
   }
 });
 
+// DELETE consent document
+router.delete('/:id', async (req, res) => {
+  try {
+    const [result] = await pool.query('DELETE FROM Consent_Document WHERE C_ID = ?', [req.params.id]);
+    if (result.affectedRows === 0) return res.status(404).json({ error: 'Document not found' });
+    res.json({ message: 'Consent document deleted successfully' });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
 module.exports = router;

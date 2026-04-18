@@ -48,7 +48,7 @@ function fmtDate(d) {
 }
 function fmtDateTime(d) {
   if (!d) return '—';
-  return new Date(d).toLocaleString('en-US', { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' });
+  return new Date(d).toLocaleString('en-US', { year: 'numeric', month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' });
 }
 
 // ── Utility: Form to JSON ──
@@ -124,6 +124,10 @@ async function loadDonors(params = {}) {
         <td>${d.Contact_no || '—'}</td>
         <td>${d.City || '—'}</td>
         <td><span class="status-badge ${d.Is_Alive ? 'status-alive' : 'status-deceased'}">${d.Is_Alive ? 'Alive' : 'Deceased'}</span></td>
+        <td><div class="action-btns">
+          <button class="btn btn-sm btn-edit" onclick="editDonor(${d.D_ID})">Edit</button>
+          <button class="btn btn-sm btn-delete" onclick="deleteDonor(${d.D_ID})">Delete</button>
+        </div></td>
       </tr>
     `).join('');
   } catch (err) {
@@ -177,6 +181,10 @@ async function loadRecipients() {
         <td>${r.Blood_Group}</td>
         <td><span style="color:${urgencyColor}; font-weight:700;">${r.Medical_Urgency_Score}</span></td>
         <td>${fmtDate(r.Registration_Date)}</td>
+        <td><div class="action-btns">
+          <button class="btn btn-sm btn-edit" onclick="editRecipient(${r.R_ID})">Edit</button>
+          <button class="btn btn-sm btn-delete" onclick="deleteRecipient(${r.R_ID})">Delete</button>
+        </div></td>
       </tr>
     `}).join('');
   } catch (err) {
@@ -213,17 +221,30 @@ async function loadOrgans() {
     const res = await fetch(`${API}/api/organs`);
     const organs = await res.json();
     const tbody = document.querySelector('#table-organs tbody');
-    tbody.innerHTML = organs.map(o => `
-      <tr>
+    const now = new Date();
+    tbody.innerHTML = organs.map(o => {
+      const isExpired = new Date(o.Expiry_Time) < now;
+      const statusBadge = isExpired && o.Status === 'Available'
+        ? `<span class="status-badge status-rejected">Expired</span>`
+        : `<span class="status-badge status-${o.Status.toLowerCase()}">${o.Status}</span>`;
+      const expiryCell = isExpired
+        ? `<span style="color: var(--danger); font-weight:600;">${fmtDateTime(o.Expiry_Time)} ⚠</span>`
+        : fmtDateTime(o.Expiry_Time);
+      return `
+      <tr ${isExpired && o.Status === 'Available' ? 'style="opacity:0.7;"' : ''}>
         <td>${o.O_ID}</td>
         <td>${o.Type}</td>
         <td>${o.Blood_Group}</td>
-        <td><span class="status-badge status-${o.Status.toLowerCase()}">${o.Status}</span></td>
+        <td>${statusBadge}</td>
         <td>${o.Donor_Name || o.Donor_ID}</td>
         <td>${fmtDateTime(o.Harvest_Time)}</td>
-        <td>${fmtDateTime(o.Expiry_Time)}</td>
-      </tr>
-    `).join('');
+        <td>${expiryCell}</td>
+        <td><div class="action-btns">
+          <button class="btn btn-sm btn-edit" onclick="editOrgan(${o.O_ID})">Edit</button>
+          <button class="btn btn-sm btn-delete" onclick="deleteOrgan(${o.O_ID})">Delete</button>
+        </div></td>
+      </tr>`;
+    }).join('');
   } catch (err) {
     console.error('Load organs failed:', err);
   }
@@ -265,6 +286,10 @@ async function loadHospitals() {
         <td>${h.Location || '—'}</td>
         <td>${h.License_No}</td>
         <td><span class="status-badge ${h.Is_Authorized ? 'status-authorized' : 'status-unauthorized'}">${h.Is_Authorized ? 'Yes' : 'No'}</span></td>
+        <td><div class="action-btns">
+          <button class="btn btn-sm btn-edit" onclick="editHospital(${h.H_ID})">Edit</button>
+          <button class="btn btn-sm btn-delete" onclick="deleteHospital(${h.H_ID})">Delete</button>
+        </div></td>
       </tr>
     `).join('');
   } catch (err) {
@@ -308,12 +333,13 @@ async function loadConsent() {
         <td><span class="status-badge status-${c.Approval_Status.toLowerCase()}">${c.Approval_Status}</span></td>
         <td>${fmtDate(c.Upload_Date)}</td>
         <td>${c.Donor_Name} (${c.Donor_ID})</td>
-        <td>
+        <td><div class="action-btns">
           ${c.Approval_Status === 'Pending' ? `
             <button class="btn btn-sm btn-approve" onclick="updateConsent(${c.C_ID}, 'Approved')">Approve</button>
             <button class="btn btn-sm btn-reject" onclick="updateConsent(${c.C_ID}, 'Rejected')">Reject</button>
-          ` : '—'}
-        </td>
+          ` : ''}
+          <button class="btn btn-sm btn-delete" onclick="deleteConsent(${c.C_ID})">Delete</button>
+        </div></td>
       </tr>
     `).join('');
   } catch (err) {
@@ -368,11 +394,19 @@ document.getElementById('form-consent').addEventListener('submit', async (e) => 
 
 async function loadFindMatchDropdowns() {
   try {
-    const res = await fetch(`${API}/api/recipients`);
-    const recipients = await res.json();
+    const [recRes, hospRes] = await Promise.all([
+      fetch(`${API}/api/recipients`),
+      fetch(`${API}/api/hospitals`)
+    ]);
+    const recipients = await recRes.json();
+    const hospitals = await hospRes.json();
+
     const sel = document.getElementById('select-match-recipient');
     sel.innerHTML = '<option value="">Select a recipient...</option>' +
       recipients.map(r => `<option value="${r.R_ID}">${r.Name} — ${r.Blood_Group} (Urgency: ${r.Medical_Urgency_Score})</option>`).join('');
+
+    window.hospitalOptionsHTML = '<option value="">Select a hospital...</option>' + 
+      hospitals.map(h => `<option value="${h.H_ID}">${h.Name} (${h.Location})</option>`).join('');
   } catch (err) {
     console.error('Load match dropdowns failed:', err);
   }
@@ -422,6 +456,13 @@ document.getElementById('form-findmatch').addEventListener('submit', async (e) =
             <span><strong>Harvested:</strong> ${fmtDateTime(o.Harvest_Time)}</span>
             <span><strong>Expires:</strong> ${fmtDateTime(o.Expiry_Time)}</span>
           </div>
+          <div style="margin-top: 12px; margin-bottom: 12px;">
+            <label style="font-size: 0.85rem; color: var(--text-muted); margin-bottom: 4px; display: block;">Performing Hospital:</label>
+            <select id="select-hosp-${o.O_ID}" class="form-input" style="width: 100%; padding: 6px; font-size: 14px;">
+              ${window.hospitalOptionsHTML || '<option value="301">Central Health Hospital</option>'}
+            </select>
+          </div>
+          <button class="btn btn-primary" style="width:100%;" onclick="allocateOrgan(${o.O_ID}, ${recipientId})">Allocate Organ</button>
         </div>
       `).join('');
     }
@@ -430,6 +471,43 @@ document.getElementById('form-findmatch').addEventListener('submit', async (e) =
     showToast('Error finding matches', 'error');
   }
 });
+
+// Perform Scenario 1: Allocate the organ!
+async function allocateOrgan(organId, recipientId) {
+  const hospitalSelect = document.getElementById(`select-hosp-${organId}`);
+  const hospitalId = hospitalSelect ? hospitalSelect.value : null;
+
+  if (!hospitalId) {
+    showToast('Please select a hospital for the surgery.', 'error');
+    return;
+  }
+
+  try {
+    const matchId = Math.floor(Math.random() * 900) + 1000; // Generate random Match ID
+    const res = await fetch(`${API}/api/matches`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        M_ID: matchId,
+        Organ_ID: organId,
+        Recipient_ID: recipientId,
+        Hospital_ID: hospitalId,
+        Compatibility_Score: 95
+      })
+    });
+    
+    const data = await res.json();
+    if (!res.ok) throw new Error(data.error);
+
+    showToast(`SUCCESS: Organ ${organId} allocated! Match ID: ${matchId}`, 'success');
+    
+    // Hide the search results since the organ is no longer available
+    document.getElementById('match-results').style.display = 'none';
+  } catch(err) {
+    showToast(err.message, 'error');
+  }
+}
+window.allocateOrgan = allocateOrgan;
 
 // ═══════════════════════════════════ MATCHES & SURGERY ═══════════════════════════════════
 
@@ -448,6 +526,9 @@ async function loadMatches() {
         <td>${m.Hospital_Name}</td>
         <td>${m.Compatibility_Score}</td>
         <td><span class="status-badge ${m.Surgery_Outcome === 'Successful' ? 'status-approved' : m.Surgery_Outcome === 'No Surgery Yet' ? 'status-pending' : 'status-rejected'}">${m.Surgery_Outcome}</span></td>
+        <td>
+          <button class="btn btn-sm btn-delete" onclick="deleteMatch(${m.M_ID})" ${m.Surgery_Outcome !== 'No Surgery Yet' ? 'disabled title="Cannot delete match after surgery"' : ''}>Delete</button>
+        </td>
       </tr>
     `).join('');
   } catch (err) {
@@ -551,7 +632,24 @@ document.getElementById('btn-run-query').addEventListener('click', async () => {
   }
 });
 
-// ═══════════════════════════════════ TRANSACTION DEMO ═══════════════════════════════════
+// ═══════════════════════════════════ TRANSACTIONS (Scenario 2 Config) ═══════════════════════════════════
+
+async function deleteMatch(id) {
+  if (!confirm('Delete Match #' + id + '? This will also automatically return the Organ Status back to Available.')) return;
+  try {
+    const r = await fetch(`${API}/api/matches/${id}`, { method: 'DELETE' });
+    const result = await r.json();
+    showToast(r.ok ? 'Match deleted successfully' : result.error, r.ok ? 'success' : 'error');
+    if (r.ok) {
+      loadMatches();
+      // Ensure the Organs table gets refreshed if it is visible
+      loadOrgans();
+    }
+  } catch (err) {
+    showToast('Failed to delete match', 'error');
+  }
+}
+window.deleteMatch = deleteMatch;
 
 async function loadTransactionDropdowns() {
   try {
@@ -564,23 +662,100 @@ async function loadTransactionDropdowns() {
     const hospitals = await hospitalsRes.json();
     const recipients = await recipientsRes.json();
 
-    document.getElementById('conflict-organ').innerHTML =
+    const organSelect = document.getElementById('conflict-organ');
+    organSelect.innerHTML =
       '<option value="">Select an available organ...</option>' +
-      organs.map(o => `<option value="${o.O_ID}">${o.Type} — ${o.Blood_Group} (ID: ${o.O_ID})</option>`).join('');
+      organs.map(o => `<option value="${o.O_ID}" data-blood="${o.Blood_Group}">${o.Type} — ${o.Blood_Group} (ID: ${o.O_ID})</option>`).join('');
 
     const hospitalOptions = '<option value="">Select...</option>' +
       hospitals.map(h => `<option value="${h.H_ID}">${h.Name}</option>`).join('');
     document.getElementById('conflict-hospital-a').innerHTML = hospitalOptions;
     document.getElementById('conflict-hospital-b').innerHTML = hospitalOptions;
 
-    const recipientOptions = '<option value="">Select...</option>' +
-      recipients.map(r => `<option value="${r.R_ID}">${r.Name} — ${r.Blood_Group}</option>`).join('');
-    document.getElementById('conflict-recipient-a').innerHTML = recipientOptions;
-    document.getElementById('conflict-recipient-b').innerHTML = recipientOptions;
+    const updateRecipientDropdowns = () => {
+      const selectedOption = organSelect.options[organSelect.selectedIndex];
+      const selectedBlood = selectedOption ? selectedOption.getAttribute('data-blood') : null;
+      
+      const filteredRecipients = selectedBlood 
+        ? recipients.filter(r => r.Blood_Group === selectedBlood)
+        : recipients; // Show all if no organ selected
+
+      const recipientOptions = '<option value="">Select...</option>' +
+        filteredRecipients.map(r => `<option value="${r.R_ID}">${r.Name} — ${r.Blood_Group}</option>`).join('');
+      
+      document.getElementById('conflict-recipient-a').innerHTML = recipientOptions;
+      document.getElementById('conflict-recipient-b').innerHTML = recipientOptions;
+    };
+
+    organSelect.addEventListener('change', updateRecipientDropdowns);
+    updateRecipientDropdowns(); // Initialize with all recipients
+
   } catch (err) {
     console.error('Load transaction dropdowns failed:', err);
   }
 }
+
+document.getElementById('btn-demo-scenario2')?.addEventListener('click', async () => {
+  const logDiv = document.getElementById('scenario2-log');
+  const organIdInput = document.getElementById('scenario2-organ-id').value;
+  const organId = parseInt(organIdInput);
+  
+  if (!organId) {
+    showToast('Please enter an expired Organ ID first', 'error');
+    return;
+  }
+  
+  logDiv.style.display = 'block';
+  logDiv.innerHTML = '';
+  
+  const addLog = (text, className = '') => {
+    logDiv.innerHTML += `<div class="log-line ${className}">${text}</div>`;
+    logDiv.scrollTop = logDiv.scrollHeight;
+  };
+  
+  addLog('> START TRANSACTION;', 'info');
+  addLog(`> Attempting to allocate Expired Organ (ID ${organId}) to Recipient 402...`, 'wait');
+  
+  // Wait a tiny bit for dramatic effect
+  await new Promise(r => setTimeout(r, 600));
+
+  try {
+    const res = await fetch(`${API}/api/transactions/test-expired`, {
+       method: 'POST',
+       headers: { 'Content-Type': 'application/json' },
+       body: JSON.stringify({ Organ_ID: organId })
+    });
+    const data = await res.json();
+    
+    addLog(`> INSERT INTO Match_Record...`, 'wait');
+    await new Promise(r => setTimeout(r, 400));
+
+    if (!res.ok) {
+      addLog(`❌ ERROR: ${data.error}`, 'fail');
+      showToast(data.error, 'error');
+    } else if (data.blocked) {
+      if (data.reason === 'expired') {
+        addLog(`❌ TRIGGER FIRED: ${data.message}`, 'fail');
+        addLog(`> Database automatically rolled back to prevent illegal operation.`, 'fail');
+        addLog(`> TRANSACTION ROLLED BACK. No data was saved.`, 'info');
+        showToast('Scenario 2: Rollback demonstrated correctly', 'success');
+      } else if (data.reason === 'not_found') {
+        addLog(`❌ ERROR: Organ ${organId} does not exist in the database.`, 'fail');
+        showToast(`Organ ${organId} not found`, 'error');
+      } else if (data.reason === 'already_used' || data.reason === 'already_matched') {
+        addLog(`❌ ERROR: ${data.message}`, 'fail');
+        showToast(data.message, 'error');
+      }
+    } else {
+      addLog(`✅ Organ ${organId} is NOT expired. The trigger did not fire.`, 'ok');
+      addLog(`> Transaction rolled back (demo only, no data changed).`, 'info');
+      showToast(`Organ ${organId} is NOT expired`, 'info');
+    }
+  } catch(err) {
+    addLog(`❌ Network Error: ${err.message}`, 'fail');
+    showToast('Connection error', 'error');
+  }
+});
 
 document.getElementById('form-conflict').addEventListener('submit', async (e) => {
   e.preventDefault();
@@ -680,3 +855,157 @@ document.getElementById('form-conflict').addEventListener('submit', async (e) =>
 
 // Load dashboard on startup
 loadDashboard();
+
+// ═══════════════════════════════════ MODAL / EDIT / DELETE ═══════════════════════════════════
+
+const bloodOptions = ['O+','O-','A+','A-','B+','B-','AB+','AB-'];
+const bloodSelect = (name, val) => `<select name="${name}" required>${bloodOptions.map(b => `<option value="${b}" ${b===val?'selected':''}>${b}</option>`).join('')}</select>`;
+
+function closeModal() {
+  document.getElementById('edit-modal').style.display = 'none';
+}
+window.closeModal = closeModal;
+
+function openModal(title, fields, onSave) {
+  document.getElementById('modal-title').textContent = title;
+  const form = document.getElementById('form-edit');
+  form.innerHTML = fields;
+  document.getElementById('edit-modal').style.display = 'flex';
+  document.getElementById('btn-modal-save').onclick = async () => {
+    await onSave(formToJSON(form));
+    closeModal();
+  };
+}
+
+// ── DONORS ──
+async function editDonor(id) {
+  const res = await fetch(`${API}/api/donors/${id}`);
+  const d = await res.json();
+  openModal('Edit Donor #' + id, `
+    <div class="form-group"><label>Name</label><input type="text" name="Name" value="${d.Name}" required /></div>
+    <div class="form-group"><label>Age</label><input type="number" name="Age" value="${d.Age}" min="0" required /></div>
+    <div class="form-group"><label>Blood Group</label>${bloodSelect('Blood_group', d.Blood_group)}</div>
+    <div class="form-group"><label>Contact</label><input type="text" name="Contact_no" value="${d.Contact_no || ''}" /></div>
+    <div class="form-group"><label>City</label><input type="text" name="City" value="${d.City || ''}" /></div>
+    <div class="form-group form-toggle"><label>Alive</label>
+      <label class="toggle"><input type="checkbox" name="Is_Alive" ${d.Is_Alive ? 'checked' : ''} /><span class="toggle-slider"></span></label>
+    </div>
+  `, async (data) => {
+    const r = await fetch(`${API}/api/donors/${id}`, { method:'PUT', headers:{'Content-Type':'application/json'}, body: JSON.stringify(data) });
+    const result = await r.json();
+    showToast(r.ok ? 'Donor updated' : result.error, r.ok ? 'success' : 'error');
+    loadDonors();
+  });
+}
+async function deleteDonor(id) {
+  if (!confirm('Delete Donor #' + id + '? This action cannot be undone.')) return;
+  const r = await fetch(`${API}/api/donors/${id}`, { method:'DELETE' });
+  const result = await r.json();
+  showToast(r.ok ? 'Donor deleted' : result.error, r.ok ? 'success' : 'error');
+  loadDonors();
+}
+window.editDonor = editDonor;
+window.deleteDonor = deleteDonor;
+
+// ── RECIPIENTS ──
+async function editRecipient(id) {
+  const res = await fetch(`${API}/api/recipients`);
+  const all = await res.json();
+  const r = all.find(x => x.R_ID === id);
+  if (!r) return showToast('Recipient not found', 'error');
+  openModal('Edit Recipient #' + id, `
+    <div class="form-group"><label>Name</label><input type="text" name="Name" value="${r.Name}" required /></div>
+    <div class="form-group"><label>Age</label><input type="number" name="Age" value="${r.Age}" min="0" required /></div>
+    <div class="form-group"><label>Blood Group</label>${bloodSelect('Blood_Group', r.Blood_Group)}</div>
+    <div class="form-group"><label>Urgency (0–100)</label><input type="number" name="Medical_Urgency_Score" value="${r.Medical_Urgency_Score}" min="0" max="100" required /></div>
+  `, async (data) => {
+    const res = await fetch(`${API}/api/recipients/${id}`, { method:'PUT', headers:{'Content-Type':'application/json'}, body: JSON.stringify(data) });
+    const result = await res.json();
+    showToast(res.ok ? 'Recipient updated' : result.error, res.ok ? 'success' : 'error');
+    loadRecipients();
+  });
+}
+async function deleteRecipient(id) {
+  if (!confirm('Delete Recipient #' + id + '?')) return;
+  const r = await fetch(`${API}/api/recipients/${id}`, { method:'DELETE' });
+  const result = await r.json();
+  showToast(r.ok ? 'Recipient deleted' : result.error, r.ok ? 'success' : 'error');
+  loadRecipients();
+}
+window.editRecipient = editRecipient;
+window.deleteRecipient = deleteRecipient;
+
+// ── ORGANS ──
+function fmtForInput(d) {
+  if (!d) return '';
+  return new Date(d).toISOString().slice(0, 16);
+}
+async function editOrgan(id) {
+  const res = await fetch(`${API}/api/organs`);
+  const all = await res.json();
+  const o = all.find(x => x.O_ID === id);
+  if (!o) return showToast('Organ not found', 'error');
+  const typeOptions = ['Kidney','Liver','Heart','Lung','Cornea','Pancreas'];
+  const statusOptions = ['Available','Allocated','Used'];
+  openModal('Edit Organ #' + id, `
+    <div class="form-group"><label>Type</label><select name="Type" required>${typeOptions.map(t => `<option value="${t}" ${t===o.Type?'selected':''}>${t}</option>`).join('')}</select></div>
+    <div class="form-group"><label>Status</label><select name="Status" required>${statusOptions.map(s => `<option value="${s}" ${s===o.Status?'selected':''}>${s}</option>`).join('')}</select></div>
+    <div class="form-group"><label>Harvest Time</label><input type="datetime-local" name="Harvest_Time" value="${fmtForInput(o.Harvest_Time)}" required /></div>
+    <div class="form-group"><label>Expiry Time</label><input type="datetime-local" name="Expiry_Time" value="${fmtForInput(o.Expiry_Time)}" required /></div>
+    <div class="form-group"><label>Donor ID</label><input type="number" name="Donor_ID" value="${o.Donor_ID}" required /></div>
+  `, async (data) => {
+    const res = await fetch(`${API}/api/organs/${id}`, { method:'PUT', headers:{'Content-Type':'application/json'}, body: JSON.stringify(data) });
+    const result = await res.json();
+    showToast(res.ok ? 'Organ updated' : result.error, res.ok ? 'success' : 'error');
+    loadOrgans();
+  });
+}
+async function deleteOrgan(id) {
+  if (!confirm('Delete Organ #' + id + '?')) return;
+  const r = await fetch(`${API}/api/organs/${id}`, { method:'DELETE' });
+  const result = await r.json();
+  showToast(r.ok ? 'Organ deleted' : result.error, r.ok ? 'success' : 'error');
+  loadOrgans();
+}
+window.editOrgan = editOrgan;
+window.deleteOrgan = deleteOrgan;
+
+// ── HOSPITALS ──
+async function editHospital(id) {
+  const res = await fetch(`${API}/api/hospitals`);
+  const all = await res.json();
+  const h = all.find(x => x.H_ID === id);
+  if (!h) return showToast('Hospital not found', 'error');
+  openModal('Edit Hospital #' + id, `
+    <div class="form-group"><label>Name</label><input type="text" name="Name" value="${h.Name}" required /></div>
+    <div class="form-group"><label>Location</label><input type="text" name="Location" value="${h.Location || ''}" /></div>
+    <div class="form-group"><label>License No</label><input type="text" name="License_No" value="${h.License_No}" required /></div>
+    <div class="form-group form-toggle"><label>Authorized</label>
+      <label class="toggle"><input type="checkbox" name="Is_Authorized" ${h.Is_Authorized ? 'checked' : ''} /><span class="toggle-slider"></span></label>
+    </div>
+  `, async (data) => {
+    const res = await fetch(`${API}/api/hospitals/${id}`, { method:'PUT', headers:{'Content-Type':'application/json'}, body: JSON.stringify(data) });
+    const result = await res.json();
+    showToast(res.ok ? 'Hospital updated' : result.error, res.ok ? 'success' : 'error');
+    loadHospitals();
+  });
+}
+async function deleteHospital(id) {
+  if (!confirm('Delete Hospital #' + id + '?')) return;
+  const r = await fetch(`${API}/api/hospitals/${id}`, { method:'DELETE' });
+  const result = await r.json();
+  showToast(r.ok ? 'Hospital deleted' : result.error, r.ok ? 'success' : 'error');
+  loadHospitals();
+}
+window.editHospital = editHospital;
+window.deleteHospital = deleteHospital;
+
+// ── CONSENT ──
+async function deleteConsent(id) {
+  if (!confirm('Delete Consent Document #' + id + '?')) return;
+  const r = await fetch(`${API}/api/consent/${id}`, { method:'DELETE' });
+  const result = await r.json();
+  showToast(r.ok ? 'Document deleted' : result.error, r.ok ? 'success' : 'error');
+  loadConsent();
+}
+window.deleteConsent = deleteConsent;

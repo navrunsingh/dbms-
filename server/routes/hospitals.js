@@ -37,4 +37,30 @@ router.post('/', async (req, res) => {
   }
 });
 
+// PUT update hospital
+router.put('/:id', async (req, res) => {
+  try {
+    const { Name, Location, License_No, Is_Authorized } = req.body;
+    const [result] = await pool.query(
+      'UPDATE Hospital SET Name = ?, Location = ?, License_No = ?, Is_Authorized = ? WHERE H_ID = ?',
+      [Name, Location, License_No, Is_Authorized, req.params.id]
+    );
+    if (result.affectedRows === 0) return res.status(404).json({ error: 'Hospital not found' });
+    res.json({ message: 'Hospital updated successfully' });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// DELETE hospital
+router.delete('/:id', async (req, res) => {
+  try {
+    const [result] = await pool.query('DELETE FROM Hospital WHERE H_ID = ?', [req.params.id]);
+    if (result.affectedRows === 0) return res.status(404).json({ error: 'Hospital not found' });
+    res.json({ message: 'Hospital deleted successfully' });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
 module.exports = router;

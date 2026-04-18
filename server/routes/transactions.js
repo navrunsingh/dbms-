@@ -111,4 +111,61 @@ router.post('/conflict', async (req, res) => {
   }
 });
 
+// POST test expired organ trigger (Scenario 2 demo)
+router.post('/test-expired', async (req, res) => {
+  const { Organ_ID } = req.body;
+  const conn = await pool.getConnection();
+  try {
+    // Check 1: Does the organ exist?
+    const [organs] = await conn.query('SELECT O_ID, Type, Expiry_Time, Status FROM Organ WHERE O_ID = ?', [Organ_ID]);
+    if (organs.length === 0) {
+      conn.release();
+      return res.json({ blocked: true, reason: 'not_found', message: `Organ ${Organ_ID} does not exist in the database.` });
+    }
+
+    const organ = organs[0];
+
+    // Check 2: Is the organ already allocated or used?
+    if (organ.Status === 'Allocated' || organ.Status === 'Used') {
+      conn.release();
+      return res.json({ blocked: true, reason: 'already_used', message: `Organ ${Organ_ID} (${organ.Type}) has already been ${organ.Status.toLowerCase()}.` });
+    }
+
+    // Check 3: Is the organ already in a match record? (UNIQUE constraint)
+    const [existingMatch] = await conn.query('SELECT M_ID FROM Match_Record WHERE Organ_ID = ?', [Organ_ID]);
+    if (existingMatch.length > 0) {
+      conn.release();
+      return res.json({ blocked: true, reason: 'already_matched', message: `Organ ${Organ_ID} (${organ.Type}) has already been matched (Match ID: ${existingMatch[0].M_ID}).` });
+    }
+
+    // Now attempt the INSERT — the ONLY thing that can block it is the expiry trigger
+    await conn.beginTransaction();
+
+    const tempMID = 99000 + Math.floor(Math.random() * 999);
+    await conn.query(
+      'INSERT INTO Match_Record (M_ID, Match_Date, Compatibility_Score, Organ_ID, Recipient_ID, Hospital_ID) VALUES (?, CURRENT_DATE, 85, ?, 401, 301)',
+      [tempMID, Organ_ID]
+    );
+
+    // If we get here, the trigger didn't block it (organ is NOT expired)
+    // Roll back so we don't actually create a match from a demo
+    await conn.rollback();
+    res.json({
+      blocked: false,
+      message: `Organ ${Organ_ID} (${organ.Type}) is NOT expired. Expiry: ${organ.Expiry_Time}. The trigger did not fire.`
+    });
+
+  } catch (err) {
+    try { await conn.rollback(); } catch (_) {}
+    // The error is from our expiry trigger
+    if (err.message.includes('expired')) {
+      res.json({ blocked: true, reason: 'expired', message: err.message });
+    } else {
+      res.status(500).json({ error: err.message });
+    }
+  } finally {
+    conn.release();
+  }
+});
+
 module.exports = router;

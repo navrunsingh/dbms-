@@ -27,4 +27,30 @@ router.post('/', async (req, res) => {
   }
 });
 
+// PUT update recipient
+router.put('/:id', async (req, res) => {
+  try {
+    const { Name, Age, Blood_Group, Medical_Urgency_Score } = req.body;
+    const [result] = await pool.query(
+      'UPDATE Recipient SET Name = ?, Age = ?, Blood_Group = ?, Medical_Urgency_Score = ? WHERE R_ID = ?',
+      [Name, Age, Blood_Group, Medical_Urgency_Score, req.params.id]
+    );
+    if (result.affectedRows === 0) return res.status(404).json({ error: 'Recipient not found' });
+    res.json({ message: 'Recipient updated successfully' });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// DELETE recipient
+router.delete('/:id', async (req, res) => {
+  try {
+    const [result] = await pool.query('DELETE FROM Recipient WHERE R_ID = ?', [req.params.id]);
+    if (result.affectedRows === 0) return res.status(404).json({ error: 'Recipient not found' });
+    res.json({ message: 'Recipient deleted successfully' });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
 module.exports = router;
