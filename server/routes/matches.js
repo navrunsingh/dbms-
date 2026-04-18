@@ -12,6 +12,7 @@ router.get('/', async (req, res) => {
              d.Name AS Donor_Name,
              r.Name AS Recipient_Name, r.Medical_Urgency_Score,
              h.Name AS Hospital_Name,
+             s.S_ID AS Surgery_ID,
              COALESCE(s.Outcome, 'No Surgery Yet') AS Surgery_Outcome
       FROM Match_Record mr
       JOIN Organ o      ON mr.Organ_ID     = o.O_ID

@@ -21,13 +21,13 @@ document.querySelectorAll('.nav-link').forEach(link => {
 function loadSectionData(section) {
   switch (section) {
     case 'dashboard':   loadDashboard(); break;
-    case 'donors':      loadDonors(); break;
-    case 'recipients':  loadRecipients(); break;
-    case 'organs':      loadOrgans(); break;
-    case 'hospitals':   loadHospitals(); break;
-    case 'consent':     loadConsent(); break;
+    case 'donors':      loadDonors(); loadDashboard(); break;
+    case 'recipients':  loadRecipients(); loadDashboard(); break;
+    case 'organs':      loadOrgans(); loadDashboard(); break;
+    case 'hospitals':   loadHospitals(); loadDashboard(); break;
+    case 'consent':     loadConsent(); loadDashboard(); break;
     case 'findmatch':   loadFindMatchDropdowns(); break;
-    case 'matches':     loadMatches(); break;
+    case 'matches':     loadMatches(); loadDashboard(); break;
     case 'queries':     loadQueries(); break;
     case 'transactions': loadTransactionDropdowns(); break;
   }
@@ -148,7 +148,7 @@ document.getElementById('form-donor').addEventListener('submit', async (e) => {
     if (res.ok) {
       showToast(`Donor registered (ID: ${result.D_ID})`);
       e.target.reset();
-      loadDonors();
+      loadDonors(); loadDashboard();
     } else {
       showToast(result.error, 'error');
     }
@@ -205,7 +205,7 @@ document.getElementById('form-recipient').addEventListener('submit', async (e) =
     if (res.ok) {
       showToast(`Recipient registered (ID: ${result.R_ID})`);
       e.target.reset();
-      loadRecipients();
+      loadRecipients(); loadDashboard();
     } else {
       showToast(result.error, 'error');
     }
@@ -263,7 +263,7 @@ document.getElementById('form-organ').addEventListener('submit', async (e) => {
     if (res.ok) {
       showToast(`Organ added (ID: ${result.O_ID})`);
       e.target.reset();
-      loadOrgans();
+      loadOrgans(); loadDashboard();
     } else {
       showToast(result.error, 'error');
     }
@@ -310,7 +310,7 @@ document.getElementById('form-hospital').addEventListener('submit', async (e) =>
     if (res.ok) {
       showToast(`Hospital added (ID: ${result.H_ID})`);
       e.target.reset();
-      loadHospitals();
+      loadHospitals(); loadDashboard();
     } else {
       showToast(result.error, 'error');
     }
@@ -357,7 +357,7 @@ async function updateConsent(id, status) {
     const result = await res.json();
     if (res.ok) {
       showToast(`Document ${id} ${status.toLowerCase()}`);
-      loadConsent();
+      loadConsent(); loadDashboard();
     } else {
       showToast(result.error, 'error');
     }
@@ -381,7 +381,7 @@ document.getElementById('form-consent').addEventListener('submit', async (e) => 
     if (res.ok) {
       showToast(`Consent document created (ID: ${result.C_ID})`);
       e.target.reset();
-      loadConsent();
+      loadConsent(); loadDashboard();
     } else {
       showToast(result.error, 'error');
     }
@@ -503,6 +503,7 @@ async function allocateOrgan(organId, recipientId) {
     
     // Hide the search results since the organ is no longer available
     document.getElementById('match-results').style.display = 'none';
+    loadDashboard();
   } catch(err) {
     showToast(err.message, 'error');
   }
@@ -516,6 +517,8 @@ async function loadMatches() {
     const res = await fetch(`${API}/api/matches`);
     const matches = await res.json();
     const tbody = document.querySelector('#table-matches tbody');
+    const getOutcomeClass = (o) => o === 'Successful' ? 'status-approved' : o === 'Failed' ? 'status-rejected' : o === 'Complications' ? 'status-complications' : o === 'Scheduled' ? 'status-scheduled' : 'status-pending';
+
     tbody.innerHTML = matches.map(m => `
       <tr>
         <td>${m.M_ID}</td>
@@ -525,7 +528,8 @@ async function loadMatches() {
         <td>${m.Recipient_Name}</td>
         <td>${m.Hospital_Name}</td>
         <td>${m.Compatibility_Score}</td>
-        <td><span class="status-badge ${m.Surgery_Outcome === 'Successful' ? 'status-approved' : m.Surgery_Outcome === 'No Surgery Yet' ? 'status-pending' : 'status-rejected'}">${m.Surgery_Outcome}</span></td>
+        <td>${m.Surgery_ID || '—'}</td>
+        <td><span class="status-badge ${getOutcomeClass(m.Surgery_Outcome)}">${m.Surgery_Outcome}</span></td>
         <td>
           <button class="btn btn-sm btn-delete" onclick="deleteMatch(${m.M_ID})" ${m.Surgery_Outcome !== 'No Surgery Yet' ? 'disabled title="Cannot delete match after surgery"' : ''}>Delete</button>
         </td>
@@ -549,7 +553,7 @@ document.getElementById('form-surgery').addEventListener('submit', async (e) => 
     if (res.ok) {
       showToast(`Surgery recorded (ID: ${result.S_ID})`);
       e.target.reset();
-      loadMatches();
+      loadMatches(); loadDashboard();
     } else {
       showToast(result.error, 'error');
     }
@@ -641,9 +645,9 @@ async function deleteMatch(id) {
     const result = await r.json();
     showToast(r.ok ? 'Match deleted successfully' : result.error, r.ok ? 'success' : 'error');
     if (r.ok) {
-      loadMatches();
+      loadMatches(); loadDashboard();
       // Ensure the Organs table gets refreshed if it is visible
-      loadOrgans();
+      loadOrgans(); loadDashboard();
     }
   } catch (err) {
     showToast('Failed to delete match', 'error');
@@ -894,7 +898,7 @@ async function editDonor(id) {
     const r = await fetch(`${API}/api/donors/${id}`, { method:'PUT', headers:{'Content-Type':'application/json'}, body: JSON.stringify(data) });
     const result = await r.json();
     showToast(r.ok ? 'Donor updated' : result.error, r.ok ? 'success' : 'error');
-    loadDonors();
+    loadDonors(); loadDashboard();
   });
 }
 async function deleteDonor(id) {
@@ -902,7 +906,7 @@ async function deleteDonor(id) {
   const r = await fetch(`${API}/api/donors/${id}`, { method:'DELETE' });
   const result = await r.json();
   showToast(r.ok ? 'Donor deleted' : result.error, r.ok ? 'success' : 'error');
-  loadDonors();
+  loadDonors(); loadDashboard();
 }
 window.editDonor = editDonor;
 window.deleteDonor = deleteDonor;
@@ -922,7 +926,7 @@ async function editRecipient(id) {
     const res = await fetch(`${API}/api/recipients/${id}`, { method:'PUT', headers:{'Content-Type':'application/json'}, body: JSON.stringify(data) });
     const result = await res.json();
     showToast(res.ok ? 'Recipient updated' : result.error, res.ok ? 'success' : 'error');
-    loadRecipients();
+    loadRecipients(); loadDashboard();
   });
 }
 async function deleteRecipient(id) {
@@ -930,7 +934,7 @@ async function deleteRecipient(id) {
   const r = await fetch(`${API}/api/recipients/${id}`, { method:'DELETE' });
   const result = await r.json();
   showToast(r.ok ? 'Recipient deleted' : result.error, r.ok ? 'success' : 'error');
-  loadRecipients();
+  loadRecipients(); loadDashboard();
 }
 window.editRecipient = editRecipient;
 window.deleteRecipient = deleteRecipient;
@@ -957,7 +961,7 @@ async function editOrgan(id) {
     const res = await fetch(`${API}/api/organs/${id}`, { method:'PUT', headers:{'Content-Type':'application/json'}, body: JSON.stringify(data) });
     const result = await res.json();
     showToast(res.ok ? 'Organ updated' : result.error, res.ok ? 'success' : 'error');
-    loadOrgans();
+    loadOrgans(); loadDashboard();
   });
 }
 async function deleteOrgan(id) {
@@ -965,7 +969,7 @@ async function deleteOrgan(id) {
   const r = await fetch(`${API}/api/organs/${id}`, { method:'DELETE' });
   const result = await r.json();
   showToast(r.ok ? 'Organ deleted' : result.error, r.ok ? 'success' : 'error');
-  loadOrgans();
+  loadOrgans(); loadDashboard();
 }
 window.editOrgan = editOrgan;
 window.deleteOrgan = deleteOrgan;
@@ -987,7 +991,7 @@ async function editHospital(id) {
     const res = await fetch(`${API}/api/hospitals/${id}`, { method:'PUT', headers:{'Content-Type':'application/json'}, body: JSON.stringify(data) });
     const result = await res.json();
     showToast(res.ok ? 'Hospital updated' : result.error, res.ok ? 'success' : 'error');
-    loadHospitals();
+    loadHospitals(); loadDashboard();
   });
 }
 async function deleteHospital(id) {
@@ -995,7 +999,7 @@ async function deleteHospital(id) {
   const r = await fetch(`${API}/api/hospitals/${id}`, { method:'DELETE' });
   const result = await r.json();
   showToast(r.ok ? 'Hospital deleted' : result.error, r.ok ? 'success' : 'error');
-  loadHospitals();
+  loadHospitals(); loadDashboard();
 }
 window.editHospital = editHospital;
 window.deleteHospital = deleteHospital;
@@ -1006,6 +1010,6 @@ async function deleteConsent(id) {
   const r = await fetch(`${API}/api/consent/${id}`, { method:'DELETE' });
   const result = await r.json();
   showToast(r.ok ? 'Document deleted' : result.error, r.ok ? 'success' : 'error');
-  loadConsent();
+  loadConsent(); loadDashboard();
 }
 window.deleteConsent = deleteConsent;
