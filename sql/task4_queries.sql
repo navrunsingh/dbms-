@@ -211,21 +211,7 @@ ORDER BY r.Medical_Urgency_Score DESC;
 -- ============================================================================
 
 -- --------------------------------------------------------------------------
--- QUERY 14: Update organ status to 'Used' after a successful surgery
--- Business Use-Case: Once a transplant surgery is completed successfully,
--- the organ's lifecycle ends. This UPDATE marks the organ as 'Used' so
--- it is removed from the active inventory and cannot be reallocated.
--- Complexity: DML UPDATE with subquery / JOIN
--- --------------------------------------------------------------------------
-UPDATE Organ o
-JOIN Match_Record mr ON o.O_ID = mr.Organ_ID
-JOIN Surgery_Record s ON mr.M_ID = s.Match_ID
-SET o.Status = 'Used'
-WHERE s.Outcome = 'Successful'
-  AND o.Status = 'Allocated';
-
--- --------------------------------------------------------------------------
--- QUERY 15: Remove rejected consent documents older than 1 year
+-- QUERY 14: Remove rejected consent documents older than 1 year
 -- Business Use-Case: For data hygiene and GDPR-like compliance, the system
 -- periodically purges consent documents that were rejected more than one
 -- year ago, as they are no longer legally relevant and consume storage.
@@ -234,3 +220,17 @@ WHERE s.Outcome = 'Successful'
 DELETE FROM Consent_Document
 WHERE Approval_Status = 'Rejected'
   AND Upload_Date < DATE_SUB(CURRENT_DATE, INTERVAL 1 YEAR);
+
+-- --------------------------------------------------------------------------
+-- QUERY 15: Expired Organs Report
+-- Business Use-Case: Lists all organs whose Expiry_Time has already passed,
+-- along with the donor name, current status, and exactly how many hours
+-- ago they expired. Critical for data hygiene and audit purposes.
+-- Complexity: Basic Retrieval + Date Math Filtering
+-- --------------------------------------------------------------------------
+SELECT o.O_ID, o.Type, o.Blood_Group, o.Status, d.Name AS Donor_Name, o.Expiry_Time, 
+       ROUND(TIMESTAMPDIFF(MINUTE, o.Expiry_Time, NOW()) / 60, 1) AS Hours_Expired 
+FROM Organ o 
+JOIN Donor d ON o.Donor_ID = d.D_ID 
+WHERE o.Expiry_Time < NOW() 
+ORDER BY o.Expiry_Time ASC;
